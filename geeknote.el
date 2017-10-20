@@ -232,6 +232,7 @@ KEYWORD the keyword to search the notes with."
             					(shell-command-to-string
 				     			"geeknote notebook-list | perl -pe 's/^Found.*$//g' | perl -lane 'splice @F,0,2;print \"@F\"' | sed '/^$/d'"))
 				    "\n")
+				   )))
 
     notebook))
 
