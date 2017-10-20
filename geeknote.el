@@ -155,7 +155,7 @@ TITLE the title of the new note to be created."
 	(note-tags (geeknote--parse-tags title))
 	(note-notebook (geeknote--parse-notebook title)))
   (async-shell-command
-   (format (concat geeknote-command " create --content WRITE --title %s --tags %s"
+   (format (concat geeknote-command " create --content WRITE --title %s -tg %s"
                    (when note-notebook " --notebook %s"))
            (shell-quote-argument note-title)
            (shell-quote-argument (or note-tags ""))
@@ -228,9 +228,11 @@ KEYWORD the keyword to search the notes with."
   (interactive)
   (let ((notebook (completing-read "notebook"
 				   (split-string
-				    (vxe-mt-chomp
-				     "geeknote notebook-list | perl -pe 's/^Found.*$//g' | perl -lane 'splice @F,0,2;print \"@F\"' | sed '/^$/d'")
-				    "\n"))))
+				   	(geeknote--chomp
+            					(shell-command-to-string
+				     			"geeknote notebook-list | perl -pe 's/^Found.*$//g' | perl -lane 'splice @F,0,2;print \"@F\"' | sed '/^$/d'"))
+				    "\n")
+
     notebook))
 
 (defun geeknote-find-in-notebook (keyword)
@@ -284,7 +286,7 @@ TAGS the tags to search the notes with."
   (geeknote--find-with-args
    (format 
     (concat geeknote-command
-            " find --tags %s --count 20")
+            " find -tg %s --count 20")
     (shell-quote-argument tags))
    tags))
 
