@@ -108,13 +108,16 @@ It's either a path to the geeknote script as an argument to python, or simply
 TITLE the title of the new note to be created."
   (interactive "sName: ")
   (message (format "geeknote creating note: %s" title))
-  (let ((note-title (geeknote--parse-title title))
-	(note-notebook (geeknote-helm-search-notebooks)))
-  (async-shell-command
-   (format (concat geeknote-command " create --content WRITE --title %s "
-                   (when note-notebook " --notebook %s"))
-           (shell-quote-argument note-title)
-           (shell-quote-argument (or note-notebook ""))))))
+  (let* ((note-title (geeknote--parse-title title))
+        (note-notebook (geeknote--helm-search-notebooks))
+        (cmd (format (concat geeknote-command " create --content WRITE --title %s "
+                        (when note-notebook " --notebook %s"))
+                (shell-quote-argument note-title)
+                (shell-quote-argument (or note-notebook ""))))
+        )
+    (async-shell-command cmd)
+    (set-process-sentinel (get-buffer-process "*Async Shell Command*") #'dindom/kill--buffer-when-done)
+    ))
 
 (defun geeknote-create-notebook (title stack)
   "Create a new note with the given title.
@@ -126,68 +129,86 @@ TITLE the title of the new note to be created."
    (format (concat geeknote-command " notebook-create --title %s "
                    (when stack " --stack %s"))
            (shell-quote-argument title)
-           (shell-quote-argument stack))))
+           (shell-quote-argument stack))
+   )
+  (set-process-sentinel (get-buffer-process "*Async Shell Command*") #'dindom/kill--buffer-when-done)
+  )
 
 (defun geeknote-create-no-helm (title)
   "Create a new note with the given title.
 
-TITLE the title of the new note to be created."
+TITLE the title of the new note to be created.
+this is the old create func, enter everythong and create"
   (interactive "sName: ")
   (message (format "geeknote creating note: %s" title))
   (let ((note-title (geeknote--parse-title title))
 	(note-tags (geeknote--parse-tags title))
 	(note-notebook (geeknote--parse-notebook title)))
-  (async-shell-command
-   (format (concat geeknote-command " create --content WRITE --title %s "
-                   (when note-notebook " --notebook %s"))
-           (shell-quote-argument note-title)
-           (shell-quote-argument (or note-tags ""))
-           (shell-quote-argument (or note-notebook ""))))))
-
-
-(defun geeknote-create-old (title)
-  "Create a new note with the given title.
-
-TITLE the title of the new note to be created."
-  (interactive "sName: ")
-  (message (format "geeknote creating note: %s" title))
-  (let ((note-title (geeknote--parse-title title))
-	(note-tags (geeknote--parse-tags title))
-	(note-notebook (geeknote--parse-notebook title)))
-  (async-shell-command
+    (async-shell-command
    (format (concat geeknote-command " create --content WRITE --title %s -tg %s"
                    (when note-notebook " --notebook %s"))
            (shell-quote-argument note-title)
            (shell-quote-argument (or note-tags ""))
-           (shell-quote-argument (or note-notebook ""))))))
+           (shell-quote-argument (or note-notebook ""))))
+     (set-process-sentinel (get-buffer-process "*Async Shell Command*") #'dindom/kill--buffer-when-done)
+))
 
 ;;;###autoload
-(defun geeknote-show (title)
+(defun geeknote-show ()
   "Open an existing note.
 
 TITLE the title of the note to show."
-  (interactive "sName: ")
-  (message (format "geeknote showing note: %s" title))
-  (let* ((note (shell-command-to-string
-                (format (concat geeknote-command " show %s")
-                        (shell-quote-argument title))))
-         (lines (split-string note "\n"))
-         (name (cadr lines))
-         (buf-name (format "*Geeknote: %s*" name)))
-    (with-current-buffer (get-buffer-create buf-name)
-      (display-buffer buf-name)      
-      (read-only-mode 0)
-      (erase-buffer)
-      (insert note)
-      (read-only-mode t)
-      (markdown-mode))
-    (other-window 1)))
-
+  (interactive)
+  (let
+      ((title (geeknote--helm-notes-list-index)))
+    (message (format "geeknote showing note: %s" title))
+    (let* ((note (shell-command-to-string
+                  (format (concat geeknote-command " show %s")
+                          (shell-quote-argument title))))
+           (lines (split-string note "\n"))
+           (name (cadr lines))
+           (buf-name (format "GEEKNOTE LIST --: %s*" name)))
+      (with-current-buffer (get-buffer-create buf-name)
+        (display-buffer buf-name)
+        (read-only-mode 0)
+        (erase-buffer)
+        (insert note)
+        (read-only-mode t)
+        (markdown-mode))
+      (other-window 1)))
+  )
 ;;;###autoload
-(defun geeknote-edit (title)
+(defun geeknote-helm-edit ()
   "Open up an existing note for editing.
 
 TITLE the title of the note to edit."
+  (interactive)
+  (let
+      ((title (geeknote--helm-notes-list-index)))
+    (message (format "Editing note: %s" title))
+    (let ((cmd (format (concat geeknote-command " edit --note %s")
+                       (shell-quote-argument title)))
+          (buf (dindom/get--geeknotelist-buffer))
+          )
+      (if buf
+          (with-current-buffer (get-buffer-create buf)
+            (pop-to-buffer buf)
+            (read-only-mode 0)
+            (async-shell-command cmd buf)
+            (set-process-sentinel (get-buffer-process buf) #'dindom/kill--buffer-when-done)
+            )
+        (progn
+          ;; (message (format "%s,%s" cmd buf))
+          (async-shell-command cmd)
+          (set-process-sentinel (get-buffer-process "*Async Shell Command*") #'dindom/kill--buffer-when-done)
+          )
+        )
+      )
+    )
+  )
+
+;;;###autoload
+(defun geeknote-edit (title)
   (interactive "sName: ")
   (message (format "Editing note: %s" title))
   (async-shell-command
@@ -195,18 +216,20 @@ TITLE the title of the note to edit."
            (shell-quote-argument title))))
 
 ;;;###autoload
-(defun geeknote-remove (title)
+(defun geeknote-remove ()
   "Delete an existing note.
 
 TITLE the title of the note to delete."
-  (interactive "sName: ")
+  (interactive)
+  (let
+      ((title (geeknote--helm-notes-list-index)))
   (message (format "geeknote deleting note: %s" title))
   (message (concat "geeknote: "
                    (shell-command-to-string
                     (format (concat geeknote-command
                                     " remove --note %s --force")
                             (shell-quote-argument title))))))
-
+  )
 ;;;###autoload
 (defun geeknote-find (keyword)
   "Search for a note with the given keyword.
@@ -216,24 +239,44 @@ KEYWORD the keyword to search the notes with."
   (geeknote--find-with-args
    (format 
     (concat geeknote-command
-            " find --search %s --count 20 --content-search")
+            " find --search %s --count 40 --content-search")
     (shell-quote-argument keyword))
    keyword))
 
-;;;###autoload
-(defun geeknote-helm-search-notebooks ()
+(defun geeknote--helm-search-notebooks ()
   "Search for a note with the given keyword.
-
 KEYWORD the keyword to search the notes with."
   (interactive)
   (let ((notebook (completing-read "notebook"
-				   (split-string
-				   	(geeknote--chomp
-            					(shell-command-to-string
-				     			"geeknote notebook-list | perl -pe 's/^Found.*$//g' | perl -lane 'splice @F,0,2;print \"@F\"' | sed '/^$/d'"))
-				    "\n")
-				   )))
+                                   (s-split "\n"
+                                            (s-chomp
+                                             (shell-command-to-string "geeknote notebook-list | perl -pe 's/^Found.*$//g' | perl -lane 'splice @F,0,2;print \"@F\"' | sed '/^$/d'"))))))
+    notebook))
 
+(defun geeknote--helm-notes-list-index ()
+  "Search for a note with the given keyword.
+  return number of index. its useful for some unnormal title"
+  (interactive)
+  (let* ((notebook (completing-read "recent notes:"
+                                   (s-split "\n"
+                                            (s-chomp
+                                             (shell-command-to-string "geeknote find --count 40|awk '$5!=\"\" {$2=\"\";$3=\"\";$4=\"\";print}'| sed 's/   //'"))))
+                  )
+        )
+    (car (s-split " " notebook))
+    )
+  )
+
+(defun geeknote--helm-notes-list ()
+  "Search for a note with the given keyword.
+  return title"
+  (interactive)
+  (let ((notebook (completing-read "recent notes:"
+                                   (s-split "\n"
+                                            (s-chomp
+                                             (shell-command-to-string "geeknote find --count 40|awk '$5!=\"\" {$1=\"\";$2=\"\";$3=\"\";$4=\"\";print}'| sed 's/^    //'"))))
+                  )
+        )
     notebook))
 
 (defun geeknote-find-in-notebook (keyword)
@@ -241,12 +284,12 @@ KEYWORD the keyword to search the notes with."
 
 KEYWORD the keyword to search the notes with."
   (interactive "sKeyword: ")
-  (let ((notebook (geeknote-helm-search-notebooks))
+  (let ((notebook (geeknote--helm-search-notebooks))
 	)
   (geeknote--find-with-args
-   (format 
+   (format
     (concat geeknote-command
-            " find --search %s --count 20 --content-search --notebook %s")
+            " find --search %s --count 40 --content-search --notebook %s")
     (shell-quote-argument keyword)
     (shell-quote-argument notebook))
    keyword)
@@ -298,9 +341,10 @@ COMMAND basically the full geeknote command to exec.
 KEYWORD is used for display and buffer title only."
   (let* ((notes (shell-command-to-string command))
          (lines (split-string notes "\n"))
-         (buf-name (format "*Geeknote Find: %s*" keyword)))
+         (buf-name (format "*GEEKNOTE LIST -- Find: %s*" keyword)))
     (with-current-buffer (get-buffer-create buf-name)
       (display-buffer buf-name)
+      (switch-to-buffer buf-name)
       (read-only-mode 0)
       (erase-buffer)
       (dotimes (i 2)
@@ -319,7 +363,8 @@ KEYWORD is used for display and buffer title only."
         (setq lines (cdr lines)))
       (read-only-mode t)
       (geeknote-mode))
-    (other-window 1)))
+    ;; (other-window 1)
+    ))
 
 ;;;###autoload
 (defun geeknote-tag-list ()
@@ -328,7 +373,7 @@ KEYWORD is used for display and buffer title only."
   (let* ((tags (shell-command-to-string
                 (format geeknote--expect-script "tag-list")))
          (lines (split-string tags "\n"))
-         (buf-name "*Geeknote Tag List*"))
+         (buf-name "*GEEKNOTE LIST -- Tags*"))
     (with-current-buffer (get-buffer-create buf-name)
       (display-buffer buf-name)
       (read-only-mode 0)
@@ -367,8 +412,8 @@ KEYWORD is used for display and buffer title only."
   (let* ((books (shell-command-to-string
                 (format geeknote--expect-script "notebook-list")))
          (lines (split-string books "\n")))
-    (with-current-buffer (get-buffer-create "*Geeknote Notebook List*")
-      (display-buffer "*Geeknote Notebook List*")
+    (with-current-buffer (get-buffer-create "*GEEKNOTE LIST -- Notebooks*")
+      (display-buffer "*GEEKNOTE LIST -- Notebooks*")
       (read-only-mode 0)
       (erase-buffer)
       (setq lines (cdr lines))
@@ -392,7 +437,7 @@ KEYWORD is used for display and buffer title only."
                                      (geeknote--find-with-notebook
                                       (cadr (split-string (button-get x 'name) " : "))))
                            'name l)
-            (insert "\n")))          
+            (insert "\n")))
         (setq lines (cdr lines)))
       (read-only-mode t)
       (geeknote-mode))
@@ -500,6 +545,32 @@ TITLE is the input given when asked for a new note title."
                                     (: (* (any " \t\n")) eos)))
                             ""
                             str))
+
+;; (defun string-starts-with-p (string prefix)
+;;   "Return t if STRING starts with prefix."
+;;   (and
+;;    (string-match (rx-to-string `(: bos ,prefix) t) string)
+;;    t))
+
+(defun dindom/kill--buffer-when-done (process signal)
+  (when (and (process-buffer process)
+             (memq (process-status process) '(exit signal)))
+    (message "%s: %s."
+             (car (cdr (cdr (process-command process))))
+             (substring signal 0 -1))
+    (sleep-for 1)
+    (kill-buffer (process-buffer process))))
+
+(defun dindom/get--buffer-subname (str)
+  (loop for buffer in (buffer-list)
+        do (if (string-prefix-p str (buffer-name buffer))
+               (return (buffer-name buffer))
+             ))
+  )
+
+(defun dindom/get--geeknotelist-buffer ()
+  (dindom/get--buffer-subname "*GEEKNOTE LIST --")
+  )
 
 (provide 'geeknote)
 ;;; geeknote.el ends here
