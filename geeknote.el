@@ -110,7 +110,8 @@ TITLE the title of the new note to be created."
   (message (format "geeknote creating note: %s" title))
   (let* ((note-title (geeknote--parse-title title))
         (note-notebook (geeknote--helm-search-notebooks))
-        (cmd (format (concat geeknote-command " create --content WRITE --title %s "
+        ;; (cmd (format (concat geeknote-command " create --content WRITE --title %s "
+        (cmd (format (concat geeknote-command " create --rawmd --content WRITE --title %s "
                         (when note-notebook " --notebook %s"))
                 (shell-quote-argument note-title)
                 (shell-quote-argument (or note-notebook ""))))
